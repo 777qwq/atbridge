@@ -26,9 +26,19 @@ static void rlLog(NSString *msg) {
 }
 
 static NSString *rlPref(NSString *key) {
-    CFTypeRef v = CFPreferencesCopyAppValue((__bridge CFStringRef)key, (__bridge CFStringRef)@"com.mos.wxrelay");
-    if (!v) return nil;
-    NSString *s = CFBridgingRelease(v);
+    // 直接读文件（绕开 cfprefsd 对手动建文件的缓存问题）
+    NSDictionary *d = [NSDictionary dictionaryWithContentsOfFile:
+        @"/var/mobile/Library/Preferences/com.mos.wxrelay.plist"];
+    if ([d isKindOfClass:[NSDictionary class]]) {
+        id v = d[key];
+        if ([v isKindOfClass:[NSString class]] && [(NSString *)v length]) {
+            return v;
+        }
+    }
+    // 兜底：CFPreferences
+    CFTypeRef cf = CFPreferencesCopyAppValue((__bridge CFStringRef)key, (__bridge CFStringRef)@"com.mos.wxrelay");
+    if (!cf) return nil;
+    NSString *s = CFBridgingRelease(cf);
     return ([s isKindOfClass:[NSString class]] && s.length) ? s : nil;
 }
 
