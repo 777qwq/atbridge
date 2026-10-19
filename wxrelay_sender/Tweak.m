@@ -44,6 +44,37 @@ static void wrLog(NSString *msg) {
 
 static id WRElvis(id obj) { return obj ?: [NSNull null]; }
 
+/* ---------- 保活：静默音频防冻结 ---------- */
+static void self_setupKeepAlive(void) {
+    @try {
+        NSString *wav = [NSTemporaryDirectory() stringByAppendingPathComponent:@"silence.wav"];
+        if (![[NSFileManager defaultManager] fileExistsAtPath:wav]) {
+            int sampleRate = 8000, seconds = 2;
+            int dataLen = sampleRate * seconds * 2;
+            struct __attribute__((packed)) WH { char r[4]; uint32_t sz; char w[4]; char f[4]; uint32_t fs; uint16_t af; uint16_t ch; uint32_t sr; uint32_t br; uint16_t ba; uint16_t bps; char dd[4]; uint32_t ds; } wh;
+            memcpy(wh.r,"RIFF",4); wh.sz=36+dataLen; memcpy(wh.w,"WAVE",4); memcpy(wh.f,"fmt ",4);
+            wh.fs=16; wh.af=1; wh.ch=1; wh.sr=sampleRate; wh.br=sampleRate*2; wh.ba=2; wh.bps=16;
+            memcpy(wh.dd,"data",4); wh.ds=dataLen;
+            NSMutableData *out = [NSMutableData dataWithBytes:&wh length:44];
+            [out increaseLengthBy:dataLen];
+            [out writeToFile:wav atomically:YES];
+        }
+        NSError *err = nil;
+        AVAudioSession *session = [AVAudioSession sharedInstance];
+        [session setCategory:AVAudioSessionCategoryPlayback withOptions:AVAudioSessionCategoryOptionMixWithOthers error:&err];
+        [session setActive:YES error:&err];
+        id player = [[NSClassFromString(@"AVAudioPlayer") alloc] initWithContentsOfURL:[NSURL fileURLWithPath:wav] error:&err];
+        if (!player) { wrLog([NSString stringWithFormat:@"keepalive player fail: %@", err]); return; }
+        ((void(*)(id,SEL,long))objc_msgSend)(player, NSSelectorFromString(@"setNumberOfLoops:"), -1);
+        ((void(*)(id,SEL,float))objc_msgSend)(player, NSSelectorFromString(@"setVolume:"), 1.0f);
+        ((BOOL(*)(id,SEL))objc_msgSend)(player, NSSelectorFromString(@"play"));
+        objc_setAssociatedObject([UIApplication sharedApplication], @selector(keyWindow), player, OBJC_ASSOCIATION_RETAIN);
+        wrLog(@"keepalive: silent audio looping");
+    } @catch (NSException *e) {
+        wrLog([NSString stringWithFormat:@"keepalive EXC: %@", e.name]);
+    }
+}
+
 /* ---------- 发送核心：进程内直调 handleOpenURL（懒猫接管） ---------- */
 static BOOL WRSendMessage(NSString *targetId, NSString *text) {
     @try {
@@ -212,7 +243,7 @@ __attribute__((constructor)) static void wxrelayCtor(void) {
         // 保活开关：wxrelay.cfg keepAlive=1 → 静默音频，防冻结（锁屏实时转发必需）
         NSString *ka = WRConfig(@"keepAlive");
         if ([ka isEqualToString:@"1"]) {
-            [self_setupKeepAlive];
+            self_setupKeepAlive();
         } else {
             wrLog(@"keepAlive off (wxrelay.cfg keepAlive=1 可开启)");
         }
