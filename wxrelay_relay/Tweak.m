@@ -1,21 +1,14 @@
 /**
- * WXRelay Relay — SpringBoard 通知捕获器（arm64e，云构建）
- * 手动 swizzle NCNotificationDispatcher postNotificationWithRequest:（iOS 14-16 公开点）
- * 规则配置（扁平）：CFPreferences 域 com.mos.wxrelay
- *   rules = 多行文本，每行：匹配文本#目标id1#目标id2（# 开头为注释）
- *   匹配=标题或正文包含匹配文本；命中→"标题\n正文"发给目标 id
+ * WXRelay Relay v0.4 — SpringBoard 通知捕获器（arm64e）
+ * hook NCNotificationDispatcher postNotificationWithRequest:（iOS 14-16 公开点）
+ * 命中规则 → 任务文件写入微信沙盒 tmp/wxrelay_task.json → darwin 通知 com.mos.wxrelay.task
+ * 微信侧收到通知读自己 tmp 的任务文件发送（微信活着立即发；冻结则唤醒时补发）
+ * 规则配置：CFPreferences 域 com.mos.wxrelay，键 rules = 多行 "匹配文本#目标id1#目标id2"
  * 日志：/var/mobile/Library/wxrelay_relay.log
  */
 #import <Foundation/Foundation.h>
+#import <CoreFoundation/CoreFoundation.h>
 #import <objc/message.h>
-#import <objc/runtime.h>
-
-#pragma clang assume_nonnull begin
-@interface CPDistributedMessagingCenter : NSObject
-+ (instancetype)centerNamed:(NSString *)name;
-- (BOOL)sendMessageName:(NSString *)name userInfo:(NSDictionary *)userInfo;
-@end
-#pragma clang assume_nonnull end
 
 static NSString *rlLogPath = @"/var/mobile/Library/wxrelay_relay.log";
 static void rlLog(NSString *msg) {
@@ -37,6 +30,49 @@ static NSString *rlPref(NSString *key) {
     if (!v) return nil;
     NSString *s = CFBridgingRelease(v);
     return ([s isKindOfClass:[NSString class]] && s.length) ? s : nil;
+}
+
+/* 定位微信数据容器：扫 .com.apple.mobile_container_manager.metadata.plist */
+static NSString *wechatContainer = nil;
+static NSString *rlWeChatContainer(void) {
+    if (wechatContainer) return wechatContainer;
+    NSString *appsDir = @"/var/mobile/Containers/Data/Application";
+    NSArray *dirs = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:appsDir error:nil];
+    for (NSString *d in dirs) {
+        NSString *meta = [appsDir stringByAppendingPathComponent:
+            [NSString stringWithFormat:@"%@/.com.apple.mobile_container_manager.metadata.plist", d]];
+        NSDictionary *md = [NSDictionary dictionaryWithContentsOfFile:meta];
+        if ([[md objectForKey:@"MCMMetadataIdentifier"] isEqualToString:@"com.tencent.xin"]) {
+            wechatContainer = [appsDir stringByAppendingPathComponent:d];
+            rlLog([NSString stringWithFormat:@"wechat container: %@", wechatContainer]);
+            return wechatContainer;
+        }
+    }
+    rlLog(@"wechat container NOT FOUND");
+    return nil;
+}
+
+static void rlDispatch(NSString *text, NSArray *targets) {
+    NSString *container = rlWeChatContainer();
+    if (!container) return;
+    NSString *tmpDir = [container stringByAppendingPathComponent:@"tmp"];
+    NSString *taskPath = [tmpDir stringByAppendingPathComponent:@"wxrelay_task.json"];
+    NSMutableArray *tasks = [NSMutableArray new];
+    NSDictionary *existing = [NSDictionary dictionaryWithContentsOfFile:taskPath];
+    if ([existing isKindOfClass:[NSDictionary class]]) {
+        NSArray *old = existing[@"tasks"];
+        if ([old isKindOfClass:[NSArray class]]) [tasks addObjectsFromArray:old];
+    }
+    [tasks addObject:@{ @"targets": targets, @"text": text, @"ts": [NSString stringWithFormat:@"%f", [NSDate date].timeIntervalSince1970] }];
+    // 上限保护：堆积超过 20 条丢弃最旧的
+    while (tasks.count > 20) [tasks removeObjectAtIndex:0];
+    NSDictionary *payload = @{ @"tasks": tasks };
+    NSData *data = [NSJSONSerialization dataWithJSONObject:payload options:NSJSONWritingPrettyPrinted error:nil];
+    [data writeToFile:taskPath atomically:YES];
+    // darwin 通知
+    CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
+        (__bridge CFStringRef)@"com.mos.wxrelay.task", NULL, NULL, YES);
+    rlLog([NSString stringWithFormat:@"task written (%lu queued) + notified", (unsigned long)tasks.count]);
 }
 
 static void rlProcess(id __unused self, id request) {
@@ -68,12 +104,8 @@ static void rlProcess(id __unused self, id request) {
             if (!targets.count) continue;
 
             NSString *full = title.length ? [NSString stringWithFormat:@"%@\n%@", title, message] : message;
-            Class cpCls = NSClassFromString(@"CPDistributedMessagingCenter");
-            if (!cpCls) { rlLog(@"CPDistributedMessagingCenter class missing"); continue; }
-            id mc = ((id(*)(Class,SEL,id))objc_msgSend)(cpCls, NSSelectorFromString(@"centerNamed:"), @"com.mos.wxrelay");
-            BOOL ok = ((BOOL(*)(id,SEL,id,id))objc_msgSend)(mc, NSSelectorFromString(@"sendMessageName:userInfo:"),
-                @"com.mos.wxrelay", (@{@"text": full, @"targets": targets, @"source": sectionID}));
-            rlLog([NSString stringWithFormat:@"match [%@] -> %@ : %@", match, targets, ok ? @"sent" : @"send-failed"]);
+            rlDispatch(full, targets);
+            rlLog([NSString stringWithFormat:@"match [%@] (%@) -> dispatched, targets=%@", match, sectionID, targets]);
             break;
         }
     } @catch (NSException *e) {
@@ -90,12 +122,12 @@ static void hooked_postNotification(id self, SEL _cmd, id request) {
 __attribute__((constructor)) static void wxrelayInit(void) {
     @autoreleasepool {
         Class cls = NSClassFromString(@"NCNotificationDispatcher");
-        if (!cls) { NSLog(@"[WXRelayRelay] NCNotificationDispatcher not found"); return; }
+        if (!cls) { rlLog(@"NCNotificationDispatcher not found"); return; }
         SEL sel = NSSelectorFromString(@"postNotificationWithRequest:");
         Method m = class_getInstanceMethod(cls, sel);
-        if (!m) { NSLog(@"[WXRelayRelay] postNotificationWithRequest: not found"); return; }
+        if (!m) { rlLog(@"postNotificationWithRequest: not found"); return; }
         orig_postNotification = (void (*)(id, SEL, id))method_getImplementation(m);
         method_setImplementation(m, (IMP)hooked_postNotification);
-        rlLog(@"hook installed (NCNotificationDispatcher.postNotificationWithRequest:)");
+        rlLog(@"v0.4 hook installed (file-based task queue)");
     }
 }
