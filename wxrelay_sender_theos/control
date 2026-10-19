@@ -1,0 +1,6 @@
+Package: com.mos.wxrelaysender
+Name: WXRelay Sender
+Version: 0.9.0
+Architecture: iphoneos-arm64
+Description: WeChat silent sender
+Author: mos

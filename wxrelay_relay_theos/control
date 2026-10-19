@@ -1,0 +1,6 @@
+Package: com.mos.wxrelayrelay
+Name: WXRelay Relay
+Version: 0.9.0
+Architecture: iphoneos-arm64
+Description: SB notification capturer
+Author: mos

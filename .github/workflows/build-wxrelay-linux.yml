@@ -1,0 +1,48 @@
+name: build-wxrelay-linux
+on:
+  push:
+    paths: ['wxrelay_relay_theos/**', 'wxrelay_sender_theos/**', '.github/workflows/build-wxrelay-linux.yml']
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install theos + ldid
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ldid unzip rsync
+          git clone --depth 1 https://github.com/theos/theos.git $HOME/theos
+          rm -f $HOME/theos/sdks/iPhoneOS*.sdk 2>/dev/null || true
+          curl -sL https://github.com/theos/sdks/archive/refs/heads/master.zip -o /tmp/sdk.zip
+          unzip -q /tmp/sdk.zip -d /tmp
+          mv /tmp/sdks-master/iPhoneOS16.5.sdk $HOME/theos/sdks/
+          echo "THEOS=$HOME/theos" >> $GITHUB_ENV
+      - name: Build relay (arm64e)
+        run: |
+          cd wxrelay_relay_theos
+          make package FINAL=1
+          ls packages/
+      - name: Build sender (arm64)
+        run: |
+          cd wxrelay_sender_theos
+          make package FINAL=1
+          ls packages/
+      - name: Merge into single deb
+        run: |
+          R_DEB=$(ls wxrelay_relay_theos/packages/*.deb | head -1)
+          S_DEB=$(ls wxrelay_sender_theos/packages/*.deb | head -1)
+          mkdir -p merge/DEBIAN merge/var/jb/Library/MobileSubstrate/DynamicLibraries
+          dpkg-deb -R "$R_DEB" merge/
+          dpkg-deb -R "$S_DEB" merge2
+          cp -a merge2/var/jb/Library/MobileSubstrate/DynamicLibraries/* merge/var/jb/Library/MobileSubstrate/DynamicLibraries/
+          cat merge2/DEBIAN/control | grep -vE "^(Package|Name|Version|Description):" >> merge/DEBIAN/depends.tmp || true
+          printf 'Package: com.mos.wxrelay\nName: WXRelay 微信通知转发\nVersion: 0.9.0\nArchitecture: iphoneos-arm64\nDescription: 通知文本匹配 -> 微信静默转发。统一配置: 微信沙盒 tmp/wxrelay.cfg (catch=匹配文本#目标id / testTarget / keepAlive=1)\nAuthor: mos\n' > merge/DEBIAN/control
+          rm -f merge/DEBIAN/depends.tmp
+          dpkg-deb --root-owner-group --build merge WXRelay-0.9.0.deb
+          mkdir out && cp WXRelay-0.9.0.deb out/
+          dpkg-deb -c out/WXRelay-0.9.0.deb
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wxrelay-deb
+          path: out/
