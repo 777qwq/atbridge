@@ -79,7 +79,7 @@ static void rlProcess(id __unused self, id request) {
     }
 }
 
-static void (*orig_postNotification(id self, SEL _cmd, id request))(id, SEL, id);
+static void (*orig_postNotification)(id, SEL, id);
 static void hooked_postNotification(id self, SEL _cmd, id request) {
     orig_postNotification(self, _cmd, request);
     rlProcess(self, request);
