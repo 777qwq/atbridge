@@ -68,9 +68,11 @@ static void rlProcess(id __unused self, id request) {
             if (!targets.count) continue;
 
             NSString *full = title.length ? [NSString stringWithFormat:@"%@\n%@", title, message] : message;
-            CPDistributedMessagingCenter *mc = [CPDistributedMessagingCenter centerNamed:@"com.mos.wxrelay"];
-            BOOL ok = [mc sendMessageName:@"com.mos.wxrelay"
-                                 userInfo:@{@"text": full, @"targets": targets, @"source": sectionID}];
+            Class cpCls = NSClassFromString(@"CPDistributedMessagingCenter");
+            if (!cpCls) { rlLog(@"CPDistributedMessagingCenter class missing"); continue; }
+            id mc = ((id(*)(Class,SEL,id))objc_msgSend)(cpCls, NSSelectorFromString(@"centerNamed:"), @"com.mos.wxrelay");
+            BOOL ok = ((BOOL(*)(id,SEL,id,id))objc_msgSend)(mc, NSSelectorFromString(@"sendMessageName:userInfo:"),
+                @"com.mos.wxrelay", (@{@"text": full, @"targets": targets, @"source": sectionID}));
             rlLog([NSString stringWithFormat:@"match [%@] -> %@ : %@", match, targets, ok ? @"sent" : @"send-failed"]);
             break;
         }
