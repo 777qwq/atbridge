@@ -1,14 +1,14 @@
 /**
  * WXRelay Relay — SpringBoard 通知捕获器（arm64e，云构建）
- * hook NCNotificationDispatcher postNotificationWithRequest:（iOS 14-16 公开点）
+ * 手动 swizzle NCNotificationDispatcher postNotificationWithRequest:（iOS 14-16 公开点）
  * 规则配置（扁平）：CFPreferences 域 com.mos.wxrelay
- *   rules = 多行字符串，每行一条：匹配文本#目标id1#目标id2
- *   （匹配=标题或正文包含匹配文本；命中→把"标题+正文"完整发给目标）
- * 日志：/var/mobile/Library/wxrelay_relay.log（SB 无沙盒，可直写）
+ *   rules = 多行文本，每行：匹配文本#目标id1#目标id2（# 开头为注释）
+ *   匹配=标题或正文包含匹配文本；命中→"标题\n正文"发给目标 id
+ * 日志：/var/mobile/Library/wxrelay_relay.log
  */
 #import <Foundation/Foundation.h>
-#import <CoreFoundation/CoreFoundation.h>
 #import <objc/message.h>
+#import <objc/runtime.h>
 
 #pragma clang assume_nonnull begin
 @interface CPDistributedMessagingCenter : NSObject
@@ -39,14 +39,8 @@ static NSString *rlPref(NSString *key) {
     return ([s isKindOfClass:[NSString class]] && s.length) ? s : nil;
 }
 
-%hook NCNotificationDispatcher
-- (void)postNotificationWithRequest:(id)request {
-    %orig;
+static void rlProcess(id __unused self, id request) {
     @try {
-        static BOOL ready = NO;
-        static dispatch_once_t once;
-        dispatch_once(&once, ^{ rlLog(@"relay ready"); ready = YES; (void)ready; });
-
         id content = ((id(*)(id,SEL))objc_msgSend)(request, NSSelectorFromString(@"content"));
         if (!content) return;
         NSString *title = ((id(*)(id,SEL))objc_msgSend)(content, NSSelectorFromString(@"title")) ?: @"";
@@ -78,10 +72,28 @@ static NSString *rlPref(NSString *key) {
             BOOL ok = [mc sendMessageName:@"com.mos.wxrelay"
                                  userInfo:@{@"text": full, @"targets": targets, @"source": sectionID}];
             rlLog([NSString stringWithFormat:@"match [%@] -> %@ : %@", match, targets, ok ? @"sent" : @"send-failed"]);
-            break; // 一条通知只匹配第一条命中的规则
+            break;
         }
     } @catch (NSException *e) {
         rlLog([NSString stringWithFormat:@"EXC: %@ %@", e.name, e.reason]);
     }
 }
-%end
+
+static void (*orig_postNotification(id self, SEL _cmd, id request))(id, SEL, id);
+static void hooked_postNotification(id self, SEL _cmd, id request) {
+    orig_postNotification(self, _cmd, request);
+    rlProcess(self, request);
+}
+
+__attribute__((constructor)) static void wxrelayInit(void) {
+    @autoreleasepool {
+        Class cls = NSClassFromString(@"NCNotificationDispatcher");
+        if (!cls) { NSLog(@"[WXRelayRelay] NCNotificationDispatcher not found"); return; }
+        SEL sel = NSSelectorFromString(@"postNotificationWithRequest:");
+        Method m = class_getInstanceMethod(cls, sel);
+        if (!m) { NSLog(@"[WXRelayRelay] postNotificationWithRequest: not found"); return; }
+        orig_postNotification = (void (*)(id, SEL, id))method_getImplementation(m);
+        method_setImplementation(m, (IMP)hooked_postNotification);
+        rlLog(@"hook installed (NCNotificationDispatcher.postNotificationWithRequest:)");
+    }
+}
