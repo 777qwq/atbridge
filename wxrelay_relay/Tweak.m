@@ -91,6 +91,31 @@ static void rlDispatch(NSString *text, NSArray *targets) {
     });
 }
 
+/* 统一配置：读微信容器 tmp/wxrelay.cfg 的 catch= 行（与微信侧同一份文件） */
+static NSDictionary *rlCatchRules(void) {
+    NSString *container = rlWeChatContainer();
+    if (!container) return nil;
+    NSString *p = [container stringByAppendingPathComponent:@"tmp/wxrelay.cfg"];
+    NSString *content = [NSString stringWithContentsOfFile:p encoding:NSUTF8StringEncoding error:nil];
+    if (!content) return nil;
+    NSMutableDictionary *rules = [NSMutableDictionary new];
+    for (NSString *line in [content componentsSeparatedByCharactersInSet:[NSCharacterSet newlineCharacterSet]]) {
+        NSString *l = [line stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+        if (![l hasPrefix:@"catch="]) continue;
+        NSArray *parts = [[l substringFromIndex:6] componentsSeparatedByString:@"#"];
+        if (parts.count < 2) continue;
+        NSString *match = [parts[0] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+        if (!match.length) continue;
+        NSMutableArray *ts = [NSMutableArray new];
+        for (NSUInteger i = 1; i < parts.count; i++) {
+            NSString *t = [parts[i] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+            if (t.length) [ts addObject:t];
+        }
+        if (ts.count) rules[match] = ts;
+    }
+    return rules.count ? rules : nil;
+}
+
 static void rlProcess(id __unused self, id request) {
     @try {
         id content = ((id(*)(id,SEL))objc_msgSend)(request, NSSelectorFromString(@"content"));
@@ -112,23 +137,12 @@ static void rlProcess(id __unused self, id request) {
         rlLog([NSString stringWithFormat:@"notif-len: title=%lu msg=%lu", (unsigned long)title.length, (unsigned long)message.length]);
         rlLog([NSString stringWithFormat:@"notif-full: [%@] %@", sectionID, message]); // 无截断，全文
 
-        NSString *rules = rlPref(@"rules");
-        if (!rules) { rlLog(@"rules PREF EMPTY — 检查 /var/mobile/Library/Preferences/com.mos.wxrelay.plist"); return; }
+        NSDictionary *rules = rlCatchRules();
+        if (!rules) { rlLog(@"rules EMPTY — 检查微信沙盒 tmp/wxrelay.cfg 的 catch= 行"); return; }
 
-        for (NSString *line in [rules componentsSeparatedByCharactersInSet:[NSCharacterSet newlineCharacterSet]]) {
-            NSString *l = [line stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-            if (!l.length || [l hasPrefix:@"#"]) continue;
-            NSArray *parts = [l componentsSeparatedByString:@"#"];
-            if (parts.count < 2) continue;
-            NSString *match = [parts[0] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-            if (!match.length) continue;
+        for (NSString *match in rules) {
+            NSArray *targets = rules[match];
             if (![title containsString:match] && ![message containsString:match]) continue;
-
-            NSMutableArray *targets = [NSMutableArray new];
-            for (NSUInteger i = 1; i < parts.count; i++) {
-                NSString *t = [parts[i] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-                if (t.length) [targets addObject:t];
-            }
             if (!targets.count) continue;
 
             NSString *full = title.length ? [NSString stringWithFormat:@"%@\n%@", title, message] : message;
