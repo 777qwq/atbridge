@@ -125,13 +125,9 @@ static void rlTryMatch(id request, id content, NSString *title, NSString *messag
             if (![title containsString:match] && ![message containsString:match]) continue;
             if (!targets.count) continue;
             NSString *full = title.length ? [NSString stringWithFormat:@"%@\n%@", title, message] : message;
-            Class cpCls = NSClassFromString(@"CPDistributedMessagingCenter");
-            if (!cpCls) return;
-            id mc = ((id(*)(Class,SEL,id))objc_msgSend)(cpCls, NSSelectorFromString(@"centerNamed:"), @"com.mos.wxrelay");
-            BOOL ok = ((BOOL(*)(id,SEL,id,id))objc_msgSend)(mc, NSSelectorFromString(@"sendMessageName:userInfo:"),
-                @"com.mos.wxrelay", (@{@"text": full, @"targets": targets, @"source": sectionID}));
-            rlLog([NSString stringWithFormat:@"match [%@] (%lu chars) -> %@ : %@", match,
-                (unsigned long)message.length, targets, ok ? @"sent" : @"send-failed"]);
+            rlDispatch(full, targets);
+            rlLog([NSString stringWithFormat:@"match [%@] (%lu chars) -> dispatched targets=%@", match,
+                (unsigned long)message.length, targets]);
             break;
         }
     } @catch (NSException *e) {
