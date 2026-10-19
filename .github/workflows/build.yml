@@ -20,7 +20,10 @@ jobs:
           cp ATBridge.dylib pkg/var/jb/Library/MobileSubstrate/DynamicLibraries/
           printf '{ Filter = { Bundles = ( "com.apple.springboard" ); }; }\n' > pkg/var/jb/Library/MobileSubstrate/DynamicLibraries/ATBridge.plist
           printf 'Package: me.autotouch.atbridge\nName: ATBridge\nVersion: 1.0.0\nArchitecture: iphoneos-arm64\nDescription: Fake LAActivator shell for ATTweak; trigger via notifyutil -p net.autotouch.atbridge.<eventname>\nAuthor: 777qwq\n' > pkg/DEBIAN/control
-          dpkg-deb --root-owner-group --build pkg ATBridge-1.0.0_rootless.deb
+          echo 2.0 > debian-binary
+          tar czf data.tar.gz -C pkg var
+          tar czf control.tar.gz -C pkg DEBIAN
+          ar rc ATBridge-1.0.0_rootless.deb debian-binary control.tar.gz data.tar.gz
           cp ATBridge-1.0.0_rootless.deb out/
           ls -la out/
       - uses: actions/upload-artifact@v4
