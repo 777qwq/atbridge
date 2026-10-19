@@ -88,8 +88,12 @@ static void rlProcess(id __unused self, id request) {
         }
         if (!title.length && !message.length) return;
 
+        rlLog([NSString stringWithFormat:@"notif: sec=%@ title=%@ msg=%@", sectionID,
+            [title length] > 30 ? [title substringToIndex:30] : title,
+            [message length] > 30 ? [message substringToIndex:30] : message]);
+
         NSString *rules = rlPref(@"rules");
-        if (!rules) return;
+        if (!rules) { rlLog(@"rules PREF EMPTY — 检查 /var/mobile/Library/Preferences/com.mos.wxrelay.plist"); return; }
 
         for (NSString *line in [rules componentsSeparatedByCharactersInSet:[NSCharacterSet newlineCharacterSet]]) {
             NSString *l = [line stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
