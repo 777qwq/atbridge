@@ -163,28 +163,27 @@ static NSString *WRConfig(NSString *key) {
 /* ---------- CPDistributedMessaging 监听（捕获器接入点） ---------- */
 static void WRFlushTasks(void) {
     @try {
-        NSString *taskPath = [NSTemporaryDirectory() stringByAppendingPathComponent:@"wxrelay_task.json"];
-        NSDictionary *payload = [NSDictionary dictionaryWithContentsOfFile:taskPath]
-            ?: [NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfFile:taskPath]
+        NSString *taskDir = [NSTemporaryDirectory() stringByAppendingPathComponent:@"wxrelay_tasks"];
+        NSArray *files = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:taskDir error:nil];
+        if (!files.count) return;
+        wrLog([NSString stringWithFormat:@"flush %lu task file(s)", (unsigned long)files.count]);
+        for (NSString *fn in files) {
+            if (![fn hasSuffix:@".json"]) continue;
+            NSString *p = [taskDir stringByAppendingPathComponent:fn];
+            NSDictionary *task = [NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfFile:p]
                 options:NSJSONReadingAllowFragments error:nil];
-        if (![payload isKindOfClass:[NSDictionary class]]) return;
-        NSArray *tasks = payload[@"tasks"];
-        if (![tasks isKindOfClass:[NSArray class]] || !tasks.count) return;
-        wrLog([NSString stringWithFormat:@"flush %lu task(s)", (unsigned long)tasks.count]);
-        for (NSDictionary *t in tasks) {
-            if (![t isKindOfClass:[NSDictionary class]]) continue;
-            NSString *text = t[@"text"];
-            NSArray *targets = t[@"targets"];
-            if (![text isKindOfClass:[NSString class]]) continue;
-            for (NSString *target in targets) {
-                if ([target isKindOfClass:[NSString class]]) WRSendMessage(target, text);
+            if ([task isKindOfClass:[NSDictionary class]]) {
+                NSString *text = task[@"text"];
+                NSArray *targets = task[@"targets"];
+                if ([text isKindOfClass:[NSString class]] && [targets isKindOfClass:[NSArray class]]) {
+                    for (NSString *target in targets) {
+                        if ([target isKindOfClass:[NSString class]]) WRSendMessage(target, text);
+                    }
+                }
             }
+            [[NSFileManager defaultManager] removeItemAtPath:p error:nil]; // 处理完删自己的文件
         }
-        // 清空队列
-        NSDictionary *empty = @{ @"tasks": @[] };
-        NSData *d = [NSJSONSerialization dataWithJSONObject:empty options:NSJSONWritingPrettyPrinted error:nil];
-        [d writeToFile:taskPath atomically:YES];
-        wrLog(@"flush done, queue cleared");
+        wrLog(@"flush done");
     } @catch (NSException *e) { wrLog([NSString stringWithFormat:@"flush EXC %@", e.name]); }
 }
 

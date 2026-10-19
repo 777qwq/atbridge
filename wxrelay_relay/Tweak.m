@@ -62,27 +62,33 @@ static NSString *rlWeChatContainer(void) {
     return nil;
 }
 
+static dispatch_queue_t rlTaskQueue(void) {
+    static dispatch_queue_t q;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ q = dispatch_queue_create("com.mos.wxrelay.tasks", DISPATCH_QUEUE_SERIAL); });
+    return q;
+}
+
 static void rlDispatch(NSString *text, NSArray *targets) {
-    NSString *container = rlWeChatContainer();
-    if (!container) return;
-    NSString *tmpDir = [container stringByAppendingPathComponent:@"tmp"];
-    NSString *taskPath = [tmpDir stringByAppendingPathComponent:@"wxrelay_task.json"];
-    NSMutableArray *tasks = [NSMutableArray new];
-    NSDictionary *existing = [NSDictionary dictionaryWithContentsOfFile:taskPath];
-    if ([existing isKindOfClass:[NSDictionary class]]) {
-        NSArray *old = existing[@"tasks"];
-        if ([old isKindOfClass:[NSArray class]]) [tasks addObjectsFromArray:old];
-    }
-    [tasks addObject:@{ @"targets": targets, @"text": text, @"ts": [NSString stringWithFormat:@"%f", [NSDate date].timeIntervalSince1970] }];
-    // 上限保护：堆积超过 20 条丢弃最旧的
-    while (tasks.count > 20) [tasks removeObjectAtIndex:0];
-    NSDictionary *payload = @{ @"tasks": tasks };
-    NSData *data = [NSJSONSerialization dataWithJSONObject:payload options:NSJSONWritingPrettyPrinted error:nil];
-    [data writeToFile:taskPath atomically:YES];
-    // darwin 通知
-    CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
-        (__bridge CFStringRef)@"com.mos.wxrelay.task", NULL, NULL, YES);
-    rlLog([NSString stringWithFormat:@"task written (%lu queued) + notified", (unsigned long)tasks.count]);
+    dispatch_async(rlTaskQueue(), ^{
+        @try {
+            NSString *container = rlWeChatContainer();
+            if (!container) return;
+            NSString *taskDir = [container stringByAppendingPathComponent:@"tmp/wxrelay_tasks"];
+            [[NSFileManager defaultManager] createDirectoryAtPath:taskDir withIntermediateDirectories:YES attributes:nil error:nil];
+            NSString *fn = [NSString stringWithFormat:@"task_%@.json",
+                [[NSUUID UUID] UUIDString]];
+            NSDictionary *task = @{ @"targets": targets, @"text": text,
+                @"ts": [NSString stringWithFormat:@"%f", [NSDate date].timeIntervalSince1970] };
+            NSData *data = [NSJSONSerialization dataWithJSONObject:task options:NSJSONWritingPrettyPrinted error:nil];
+            [data writeToFile:[taskDir stringByAppendingPathComponent:fn] atomically:YES];
+            CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
+                (__bridge CFStringRef)@"com.mos.wxrelay.task", NULL, NULL, YES);
+            rlLog([NSString stringWithFormat:@"task written: %@ targets=%@", fn, targets]);
+        } @catch (NSException *e) {
+            rlLog([NSString stringWithFormat:@"dispatch EXC: %@", e.name]);
+        }
+    });
 }
 
 static void rlProcess(id __unused self, id request) {
@@ -100,9 +106,14 @@ static void rlProcess(id __unused self, id request) {
         static NSMutableDictionary *recent = nil;
         static dispatch_once_t onceT;
         dispatch_once(&onceT, ^{ recent = [NSMutableDictionary new]; });
-        NSString *sig = [NSString stringWithFormat:@"%@|%@|%@|%d", sectionID, title, message,
-            (int)([[NSDate date] timeIntervalSince1970] / 60)];
-        if (recent[sig]) { rlLog(@"dedupe: repeated notif skipped"); return; }
+        NSString *sig = [NSString stringWithFormat:@"%@|%@|%@", sectionID, title, message];
+        NSDate *seen = recent[sig];
+        NSString *dedupeCfg = rlPref(@"dedupe");
+        BOOL dedupeOn = ![dedupeCfg isEqualToString:@"0"];
+        if (dedupeOn && seen && [[NSDate date] timeIntervalSinceDate:seen] < 60) {
+            rlLog(@"dedupe: same notif within 60s skipped");
+            return;
+        }
         recent[sig] = [NSDate date];
         for (NSString *k in [recent allKeys]) {
             if ([[NSDate date] timeIntervalSinceDate:recent[k]] > 120) [recent removeObjectForKey:k];
