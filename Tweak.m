@@ -8,6 +8,21 @@
 //   然后用同名的 atbridge 通知触发。
 #import "Tweak.h"
 #include <objc/message.h>
+
+static NSString *logFile = @"/var/mobile/Library/ATBridge.log";
+static void alog(NSString *fmt, ...) NS_FORMAT_FUNCTION(1,2);
+static void alog(NSString *fmt, ...) {
+    va_list ap; va_start(ap, fmt);
+    NSString *msg = [[NSString alloc] initWithFormat:fmt arguments:ap];
+    va_end(ap);
+    static NSDateFormatter *f = nil;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ f = [NSDateFormatter new]; f.dateFormat = @"HH:mm:ss"; });
+    NSString *line = [NSString stringWithFormat:@"[%@] %@\n", [f stringFromDate:[NSDate date]], msg];
+    FILE *fp = fopen(logFile.fileSystemRepresentation, "a");
+    if (fp) { fputs(line.UTF8String, fp); fclose(fp); }
+    NSLog(@"%@", line);
+}
 #include <CoreFoundation/CoreFoundation.h>
 
 static NSMutableDictionary *listeners;   // name -> listener
@@ -34,7 +49,7 @@ static LAActivator *shared;
 - (void)registerListener:(id)listener forName:(NSString *)name {
     if (!listeners) listeners = [NSMutableDictionary new];
     listeners[name] = listener;
-    NSLog(@"[ATBridge] registered listener: %@", name);
+    alog(@"[ATBridge] registered listener: %@", name);
 }
 - (id)listenerForName:(NSString *)name { return listeners[name]; }
 - (BOOL)isListenerRegistered:(NSString *)name { return listeners[name] != nil; }
@@ -71,7 +86,7 @@ static void bridge_cb(CFNotificationCenterRef center, void *observer,
         NSString *n = (__bridge NSString *)name;
         if (![n hasPrefix:@"net.autotouch.atbridge."]) return;
         NSString *eventName = n; // 事件名=完整通知名，须与 AT.ACTIVATOR.<target> 的值一致
-        NSLog(@"[ATBridge] delivering event: %@ to %lu listener(s)", eventName, (unsigned long)listeners.count);
+        alog(@"[ATBridge] delivering event: %@ to %lu listener(s)", eventName, (unsigned long)listeners.count);
         LAEvent *ev = [[LAEvent alloc] initWithName:eventName mode:@"shortHold"];
         // 投递给所有已注册 listener（ATTweak 只有一个）
         for (NSString *ln in listeners) {
@@ -100,15 +115,15 @@ __attribute__((constructor)) static void ATBridgeInit(void) {
                 CFTypeRef cur = CFPreferencesCopyAppValue((__bridge CFStringRef)key, (__bridge CFStringRef)appID);
                 if (cur == NULL) {
                     CFPreferencesSetAppValue((__bridge CFStringRef)key, (__bridge CFStringRef)defaults[key], (__bridge CFStringRef)appID);
-                    NSLog(@"[ATBridge] auto-created pref: %@ = %@", key, defaults[key]);
+                    alog(@"[ATBridge] auto-created pref: %@ = %@", key, defaults[key]);
                 } else {
                     CFRelease(cur);
                 }
             }
             CFPreferencesAppSynchronize((__bridge CFStringRef)appID);
         } @catch (NSException *e) {
-            NSLog(@"[ATBridge] pref setup failed: %@", e);
+            alog(@"[ATBridge] pref setup failed: %@", e);
         }
-        NSLog(@"[ATBridge] fake LAActivator ready; trigger via: notifyutil -p net.autotouch.atbridge.<eventname>");
+        alog(@"[ATBridge] fake LAActivator ready; trigger via: notifyutil -p net.autotouch.atbridge.<eventname>");
     }
 }
