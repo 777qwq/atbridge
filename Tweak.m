@@ -7,6 +7,7 @@
 //   AT.ACTIVATOR.main / AT.ACTIVATOR.sub 设为任意事件名（如 atbridge.main），
 //   然后用同名的 atbridge 通知触发。
 #import "Tweak.h"
+#include <objc/message.h>
 #include <CoreFoundation/CoreFoundation.h>
 
 static NSMutableDictionary *listeners;   // name -> listener
