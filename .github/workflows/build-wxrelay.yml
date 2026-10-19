@@ -1,0 +1,24 @@
+name: build-wxrelay-relay
+on:
+  push:
+    paths: ['wxrelay_relay/**']
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ldid
+        run: brew install ldid
+      - name: Build arm64e dylib
+        run: |
+          cd wxrelay_relay
+          clang -arch arm64e -target arm64e-apple-ios16.3 -miphonesimulator-version-min=16.3 \
+            -dynamiclib -framework Foundation -framework CoreFoundation -fobjc-arc \
+            -o WXRelayRelay.dylib Tweak.x -lobjc
+          ldid -M -S WXRelayRelay.dylib
+          lipo -info WXRelayRelay.dylib
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wxrelay-relay-dylib
+          path: wxrelay_relay/WXRelayRelay.dylib
