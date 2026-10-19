@@ -13,9 +13,10 @@ jobs:
       - name: Build arm64e dylib
         run: |
           cd wxrelay_relay
-          clang -arch arm64e -dynamiclib \
-            -dynamiclib -framework Foundation -framework CoreFoundation -fobjc-arc \
+          xcrun -sdk iphoneos clang -arch arm64e -dynamiclib \
+            -framework Foundation -framework CoreFoundation -fobjc-arc \
             -o WXRelayRelay.dylib Tweak.m -lobjc
+          vtool -show-build WXRelayRelay.dylib | head -12
           ldid -M -S WXRelayRelay.dylib
           lipo -info WXRelayRelay.dylib
       - uses: actions/upload-artifact@v4
