@@ -44,6 +44,8 @@ static void wrLog(NSString *msg) {
 
 static id WRElvis(id obj) { return obj ?: [NSNull null]; }
 
+static BOOL WRSendMessage(NSString *targetId, NSString *text);
+
 /* ---------- 收信捕获：hook CMessageMgr AddMsg:MsgWrap:（进站消息全文） ---------- */
 static void (*orig_AddMsg)(id, SEL, id, id);
 static NSMutableDictionary *wrCatchRules; // matchText -> [targets]
@@ -156,7 +158,7 @@ static void self_setupKeepAlive(void) {
 }
 
 /* ---------- 发送核心：进程内直调 handleOpenURL（懒猫接管） ---------- */
-static BOOL WRSendMessage(NSString *targetId, NSString *text) {
+BOOL WRSendMessage(NSString *targetId, NSString *text) {
     @try {
         id delegate = [UIApplication sharedApplication].delegate;
         if (!delegate) { wrLog(@"send: app delegate nil"); return NO; }
