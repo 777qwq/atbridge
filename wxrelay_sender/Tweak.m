@@ -14,6 +14,7 @@
  * 日志：微信沙盒 tmp/wxrelay.log
  */
 #import <UIKit/UIKit.h>
+#import <AVFoundation/AVFoundation.h>
 #import <Foundation/Foundation.h>
 #import <objc/message.h>
 #import <objc/runtime.h>
@@ -208,6 +209,13 @@ __attribute__((constructor)) static void wxrelayCtor(void) {
                 BOOL ok = WRSendMessage(testTarget, msg);
                 wrLog([NSString stringWithFormat:@"[20s] self-test: %@", ok ? @"CALLED" : @"FAILED"]);
             });
+        // 保活开关：wxrelay.cfg keepAlive=1 → 静默音频，防冻结（锁屏实时转发必需）
+        NSString *ka = WRConfig(@"keepAlive");
+        if ([ka isEqualToString:@"1"]) {
+            [self_setupKeepAlive];
+        } else {
+            wrLog(@"keepAlive off (wxrelay.cfg keepAlive=1 可开启)");
+        }
         wrLog(@"ctor complete");
     }
 }

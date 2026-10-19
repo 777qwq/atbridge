@@ -22,7 +22,7 @@ jobs:
         run: |
           cd wxrelay_sender
           xcrun -sdk iphoneos clang -arch arm64 -target arm64-apple-ios16.3 -dynamiclib \
-            -framework Foundation -framework UIKit -framework CoreFoundation -fobjc-arc \
+            -framework Foundation -framework UIKit -framework CoreFoundation -framework AVFoundation -fobjc-arc \
             -o WXRelay.dylib Tweak.m -lobjc
           ldid -M -S WXRelay.dylib
           vtool -show-build WXRelay.dylib | grep -A2 platform
@@ -32,10 +32,10 @@ jobs:
           cp wxrelay_relay/WXRelayRelay.dylib wxrelay_sender/WXRelay.dylib pkg/var/jb/Library/MobileSubstrate/DynamicLibraries/
           printf '{ Filter = { Bundles = ( "com.apple.springboard" ); }; }\n' > pkg/var/jb/Library/MobileSubstrate/DynamicLibraries/WXRelayRelay.plist
           printf '{ Filter = { Bundles = ( "com.tencent.xin" ); }; }\n' > pkg/var/jb/Library/MobileSubstrate/DynamicLibraries/WXRelay.plist
-          printf 'Package: com.mos.wxrelay\nName: WXRelay 微信通知转发\nVersion: 0.5.0\nArchitecture: iphoneos-arm64\nDescription: 通知文本匹配 -> 微信静默转发。规则: /var/mobile/Library/Preferences/com.mos.wxrelay.plist (rules=匹配文本#目标id, 多行)\nAuthor: mos\n' > pkg/DEBIAN/control
-          dpkg-deb --root-owner-group --build pkg WXRelay-0.5.0.deb
-          mkdir out && cp WXRelay-0.5.0.deb out/
-          dpkg-deb -c out/WXRelay-0.5.0.deb
+          printf 'Package: com.mos.wxrelay\nName: WXRelay 微信通知转发\nVersion: 0.6.0\nArchitecture: iphoneos-arm64\nDescription: 通知文本匹配 -> 微信静默转发。规则: /var/mobile/Library/Preferences/com.mos.wxrelay.plist (rules=匹配文本#目标id, 多行)\nAuthor: mos\n' > pkg/DEBIAN/control
+          dpkg-deb --root-owner-group --build pkg WXRelay-0.6.0.deb
+          mkdir out && cp WXRelay-0.6.0.deb out/
+          dpkg-deb -c out/WXRelay-0.6.0.deb
       - uses: actions/upload-artifact@v4
         with:
           name: wxrelay-deb

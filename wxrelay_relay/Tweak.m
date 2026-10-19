@@ -96,8 +96,19 @@ static void rlProcess(id __unused self, id request) {
         if ([request respondsToSelector:sidSel]) {
             sectionID = ((id(*)(id,SEL))objc_msgSend)(request, sidSel) ?: @"";
         }
-        // 回环防护：默认跳过微信自己的通知（转发出去的消息又会弹通知）
-        NSString *skip = rlPref(@"skipSources") ?: @"com.tencent.xin";
+        // 防风暴：同一通知 60 秒内只处理一次（按 来源+标题+正文+分钟 去重）
+        static NSMutableDictionary *recent = nil;
+        static dispatch_once_t onceT;
+        dispatch_once(&onceT, ^{ recent = [NSMutableDictionary new]; });
+        NSString *sig = [NSString stringWithFormat:@"%@|%@|%@|%d", sectionID, title, message,
+            (int)([[NSDate date] timeIntervalSince1970] / 60)];
+        if (recent[sig]) { wrLog(@"dedupe: repeated notif skipped"); return; }
+        recent[sig] = [NSDate date];
+        for (NSString *k in [recent allKeys]) {
+            if ([[NSDate date] timeIntervalSinceDate:recent[k]] > 120) [recent removeObjectForKey:k];
+        }
+        // 可选跳过来源（默认空=微信通知也作为触发源）
+        NSString *skip = rlPref(@"skipSources") ?: @"";
         for (NSString *sn in [skip componentsSeparatedByString:@","]) {
             NSString *t = [sn stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
             if (t.length && [sectionID isEqualToString:t]) return;
