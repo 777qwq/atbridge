@@ -96,6 +96,12 @@ static void rlProcess(id __unused self, id request) {
         if ([request respondsToSelector:sidSel]) {
             sectionID = ((id(*)(id,SEL))objc_msgSend)(request, sidSel) ?: @"";
         }
+        // 回环防护：默认跳过微信自己的通知（转发出去的消息又会弹通知）
+        NSString *skip = rlPref(@"skipSources") ?: @"com.tencent.xin";
+        for (NSString *sn in [skip componentsSeparatedByString:@","]) {
+            NSString *t = [sn stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+            if (t.length && [sectionID isEqualToString:t]) return;
+        }
         if (!title.length && !message.length) return;
 
         rlLog([NSString stringWithFormat:@"notif: sec=%@ title=%@ msg=%@", sectionID,
