@@ -90,7 +90,7 @@ static BOOL WRSendMessage(NSString *targetId, NSString *text) {
         NSURL *url = [NSURL URLWithString:urlStr];
         if (!url) { wrLog([NSString stringWithFormat:@"send: bad url %@", urlStr]); return NO; }
 
-        wrLog([NSString stringWithFormat:@"send: invoking handleOpenURL %@", urlStr]);
+        wrLog([NSString stringWithFormat:@"send: invoking handleOpenURL (text len=%lu) full-text=%@", (unsigned long)text.length, text]);
         ((BOOL(*)(id,SEL,id,id,id,id))objc_msgSend)(delegate, h, nil, url, nil, nil);
         wrLog(@"send: handleOpenURL invoked (LazyCat hook expected to fire)");
         return YES;
