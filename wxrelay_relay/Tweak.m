@@ -109,9 +109,8 @@ static void rlProcess(id __unused self, id request) {
         }
         if (!title.length && !message.length) return;
 
-        rlLog([NSString stringWithFormat:@"notif: sec=%@ title=%@ msg=%@", sectionID,
-            [title length] > 30 ? [title substringToIndex:30] : title,
-            [message length] > 30 ? [message substringToIndex:30] : message]);
+        rlLog([NSString stringWithFormat:@"notif-len: title=%lu msg=%lu", (unsigned long)title.length, (unsigned long)message.length]);
+        rlLog([NSString stringWithFormat:@"notif-full: [%@] %@", sectionID, message]); // 无截断，全文
 
         NSString *rules = rlPref(@"rules");
         if (!rules) { rlLog(@"rules PREF EMPTY — 检查 /var/mobile/Library/Preferences/com.mos.wxrelay.plist"); return; }
@@ -133,6 +132,8 @@ static void rlProcess(id __unused self, id request) {
             if (!targets.count) continue;
 
             NSString *full = title.length ? [NSString stringWithFormat:@"%@\n%@", title, message] : message;
+            rlLog([NSString stringWithFormat:@"dispatch-len: %lu", (unsigned long)full.length]);
+            rlLog([NSString stringWithFormat:@"dispatch-full: %@", full]); // 无截断
             rlDispatch(full, targets);
             rlLog([NSString stringWithFormat:@"match [%@] (%@) -> dispatched, targets=%@", match, sectionID, targets]);
             break;
