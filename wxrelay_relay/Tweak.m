@@ -102,7 +102,7 @@ static void rlProcess(id __unused self, id request) {
         dispatch_once(&onceT, ^{ recent = [NSMutableDictionary new]; });
         NSString *sig = [NSString stringWithFormat:@"%@|%@|%@|%d", sectionID, title, message,
             (int)([[NSDate date] timeIntervalSince1970] / 60)];
-        if (recent[sig]) { wrLog(@"dedupe: repeated notif skipped"); return; }
+        if (recent[sig]) { rlLog(@"dedupe: repeated notif skipped"); return; }
         recent[sig] = [NSDate date];
         for (NSString *k in [recent allKeys]) {
             if ([[NSDate date] timeIntervalSinceDate:recent[k]] > 120) [recent removeObjectForKey:k];
