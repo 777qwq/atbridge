@@ -70,8 +70,8 @@ static void bridge_cb(CFNotificationCenterRef center, void *observer,
     @autoreleasepool {
         NSString *n = (__bridge NSString *)name;
         if (![n hasPrefix:@"net.autotouch.atbridge."]) return;
-        NSString *eventName = [n substringFromIndex:@"net.autotouch.atbridge.".length];
-        if ([eventName length] == 0) return;
+        NSString *eventName = n; // 事件名=完整通知名，须与 AT.ACTIVATOR.<target> 的值一致
+        NSLog(@"[ATBridge] delivering event: %@ to %lu listener(s)", eventName, (unsigned long)listeners.count);
         LAEvent *ev = [[LAEvent alloc] initWithName:eventName mode:@"shortHold"];
         // 投递给所有已注册 listener（ATTweak 只有一个）
         for (NSString *ln in listeners) {
