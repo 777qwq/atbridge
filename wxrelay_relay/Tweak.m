@@ -116,6 +116,29 @@ static NSDictionary *rlCatchRules(void) {
     return rules.count ? rules : nil;
 }
 
+static void rlTryMatch(id request, id content, NSString *title, NSString *message, NSString *sectionID) {
+    @try {
+        NSDictionary *rules = rlCatchRules();
+        if (!rules) return;
+        for (NSString *match in rules) {
+            NSArray *targets = rules[match];
+            if (![title containsString:match] && ![message containsString:match]) continue;
+            if (!targets.count) continue;
+            NSString *full = title.length ? [NSString stringWithFormat:@"%@\n%@", title, message] : message;
+            Class cpCls = NSClassFromString(@"CPDistributedMessagingCenter");
+            if (!cpCls) return;
+            id mc = ((id(*)(Class,SEL,id))objc_msgSend)(cpCls, NSSelectorFromString(@"centerNamed:"), @"com.mos.wxrelay");
+            BOOL ok = ((BOOL(*)(id,SEL,id,id))objc_msgSend)(mc, NSSelectorFromString(@"sendMessageName:userInfo:"),
+                @"com.mos.wxrelay", (@{@"text": full, @"targets": targets, @"source": sectionID}));
+            rlLog([NSString stringWithFormat:@"match [%@] (%lu chars) -> %@ : %@", match,
+                (unsigned long)message.length, targets, ok ? @"sent" : @"send-failed"]);
+            break;
+        }
+    } @catch (NSException *e) {
+        rlLog([NSString stringWithFormat:@"trymatch EXC: %@", e.name]);
+    }
+}
+
 static void rlProcess(id __unused self, id request) {
     @try {
         id content = ((id(*)(id,SEL))objc_msgSend)(request, NSSelectorFromString(@"content"));
@@ -135,23 +158,24 @@ static void rlProcess(id __unused self, id request) {
         if (!title.length && !message.length) return;
 
         rlLog([NSString stringWithFormat:@"notif-len: title=%lu msg=%lu", (unsigned long)title.length, (unsigned long)message.length]);
-        rlLog([NSString stringWithFormat:@"notif-full: [%@] %@", sectionID, message]); // 无截断，全文
+        rlLog([NSString stringWithFormat:@"notif-full: [%@] %@", sectionID, message]);
 
-        NSDictionary *rules = rlCatchRules();
-        if (!rules) { rlLog(@"rules EMPTY — 检查微信沙盒 tmp/wxrelay.cfg 的 catch= 行"); return; }
+        rlTryMatch(request, content, title, message, sectionID);
 
-        for (NSString *match in rules) {
-            NSArray *targets = rules[match];
-            if (![title containsString:match] && ![message containsString:match]) continue;
-            if (!targets.count) continue;
-
-            NSString *full = title.length ? [NSString stringWithFormat:@"%@\n%@", title, message] : message;
-            rlLog([NSString stringWithFormat:@"dispatch-len: %lu", (unsigned long)full.length]);
-            rlLog([NSString stringWithFormat:@"dispatch-full: %@", full]); // 无截断
-            rlDispatch(full, targets);
-            rlLog([NSString stringWithFormat:@"match [%@] (%@) -> dispatched, targets=%@", match, sectionID, targets]);
-            break;
-        }
+        // 延迟复查：iOS 原地更新通知内容（先短后长），3 秒后重读，变长再匹配一次
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            @try {
+                id c2 = ((id(*)(id,SEL))objc_msgSend)(request, NSSelectorFromString(@"content"));
+                if (!c2) return;
+                NSString *m2 = ((id(*)(id,SEL))objc_msgSend)(c2, NSSelectorFromString(@"message")) ?: @"";
+                NSString *t2 = ((id(*)(id,SEL))objc_msgSend)(c2, NSSelectorFromString(@"title")) ?: @"";
+                if (m2.length > message.length || t2.length > title.length) {
+                    rlLog([NSString stringWithFormat:@"late-update: msg %lu -> %lu chars, re-matching",
+                        (unsigned long)message.length, (unsigned long)m2.length]);
+                    rlTryMatch(request, c2, t2, m2, sectionID);
+                }
+            } @catch (NSException *e) { }
+        });
     } @catch (NSException *e) {
         rlLog([NSString stringWithFormat:@"EXC: %@ %@", e.name, e.reason]);
     }
