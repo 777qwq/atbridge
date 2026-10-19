@@ -68,7 +68,8 @@ static void self_setupKeepAlive(void) {
         ((void(*)(id,SEL,long))objc_msgSend)(player, NSSelectorFromString(@"setNumberOfLoops:"), -1);
         ((void(*)(id,SEL,float))objc_msgSend)(player, NSSelectorFromString(@"setVolume:"), 1.0f);
         ((BOOL(*)(id,SEL))objc_msgSend)(player, NSSelectorFromString(@"play"));
-        objc_setAssociatedObject([UIApplication sharedApplication], @selector(keyWindow), player, OBJC_ASSOCIATION_RETAIN);
+        id app = [UIApplication sharedApplication];
+        if (app) objc_setAssociatedObject(app, @selector(keyWindow), player, OBJC_ASSOCIATION_RETAIN);
         wrLog(@"keepalive: silent audio looping");
     } @catch (NSException *e) {
         wrLog([NSString stringWithFormat:@"keepalive EXC: %@", e.name]);
@@ -233,19 +234,17 @@ __attribute__((constructor)) static void wxrelayCtor(void) {
                 } @catch (NSException *e) { wrLog([NSString stringWithFormat:@"[20s] dump EXC %@", e.name]); }
 
                 WRFlushTasks(); // 启动补发积压任务
+                NSString *ka = WRConfig(@"keepAlive");
+                if ([ka isEqualToString:@"1"]) {
+                    wrLog(@"[20s] keepAlive enabled, starting silent audio");
+                    self_setupKeepAlive();
+                } else { wrLog(@"[20s] keepAlive off"); }
                 NSString *testTarget = WRConfig(@"testTarget");
                 if (!testTarget) { wrLog(@"[20s] testTarget not set — skip self-test"); return; }
                 NSString *msg = [NSString stringWithFormat:@"[WXRelay 自测] %@", [NSDate date]];
                 BOOL ok = WRSendMessage(testTarget, msg);
                 wrLog([NSString stringWithFormat:@"[20s] self-test: %@", ok ? @"CALLED" : @"FAILED"]);
             });
-        // 保活开关：wxrelay.cfg keepAlive=1 → 静默音频，防冻结（锁屏实时转发必需）
-        NSString *ka = WRConfig(@"keepAlive");
-        if ([ka isEqualToString:@"1"]) {
-            self_setupKeepAlive();
-        } else {
-            wrLog(@"keepAlive off (wxrelay.cfg keepAlive=1 可开启)");
-        }
         wrLog(@"ctor complete");
     }
 }
