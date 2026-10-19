@@ -89,6 +89,26 @@ __attribute__((constructor)) static void ATBridgeInit(void) {
             CFNotificationSuspensionBehaviorDeliverImmediately);
         // 确保类已注册（触发 +initialize 顺序无碍）
         [LAActivator sharedActivator];
+        // 自动创建绑定：AT.ACTIVATOR.main/sub -> atbridge 通知全名（不覆盖已有值）
+        @try {
+            NSString *appID = @"me.autotouch.AutoTouch.ios8";
+            NSDictionary *defaults = @{
+                @"AT.ACTIVATOR.main": @"net.autotouch.atbridge.main",
+                @"AT.ACTIVATOR.sub":  @"net.autotouch.atbridge.sub",
+            };
+            for (NSString *key in defaults) {
+                CFTypeRef cur = CFPreferencesCopyAppValue((__bridge CFStringRef)key, (__bridge CFStringRef)appID);
+                if (cur == NULL) {
+                    CFPreferencesSetAppValue((__bridge CFStringRef)key, (__bridge CFStringRef)defaults[key], (__bridge CFStringRef)appID);
+                    NSLog(@"[ATBridge] auto-created pref: %@ = %@", key, defaults[key]);
+                } else {
+                    CFRelease(cur);
+                }
+            }
+            CFPreferencesAppSynchronize((__bridge CFStringRef)appID);
+        } @catch (NSException *e) {
+            NSLog(@"[ATBridge] pref setup failed: %@", e);
+        }
         NSLog(@"[ATBridge] fake LAActivator ready; trigger via: notifyutil -p net.autotouch.atbridge.<eventname>");
     }
 }
