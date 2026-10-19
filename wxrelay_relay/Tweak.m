@@ -81,7 +81,11 @@ static void rlProcess(id __unused self, id request) {
         if (!content) return;
         NSString *title = ((id(*)(id,SEL))objc_msgSend)(content, NSSelectorFromString(@"title")) ?: @"";
         NSString *message = ((id(*)(id,SEL))objc_msgSend)(content, NSSelectorFromString(@"message")) ?: @"";
-        NSString *sectionID = ((id(*)(id,SEL))objc_msgSend)(request, NSSelectorFromString(@"sectionID")) ?: @"";
+        NSString *sectionID = @"";
+        SEL sidSel = NSSelectorFromString(@"sectionIdentifier");
+        if ([request respondsToSelector:sidSel]) {
+            sectionID = ((id(*)(id,SEL))objc_msgSend)(request, sidSel) ?: @"";
+        }
         if (!title.length && !message.length) return;
 
         NSString *rules = rlPref(@"rules");
