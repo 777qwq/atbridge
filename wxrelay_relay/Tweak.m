@@ -102,23 +102,6 @@ static void rlProcess(id __unused self, id request) {
         if ([request respondsToSelector:sidSel]) {
             sectionID = ((id(*)(id,SEL))objc_msgSend)(request, sidSel) ?: @"";
         }
-        // 防风暴：同一通知 60 秒内只处理一次（按 来源+标题+正文+分钟 去重）
-        static NSMutableDictionary *recent = nil;
-        static dispatch_once_t onceT;
-        dispatch_once(&onceT, ^{ recent = [NSMutableDictionary new]; });
-        NSString *sig = [NSString stringWithFormat:@"%@|%@|%@", sectionID, title, message];
-        NSDate *seen = recent[sig];
-        NSString *dedupeCfg = rlPref(@"dedupe");
-        BOOL dedupeOn = ![dedupeCfg isEqualToString:@"0"];
-        if (dedupeOn && seen && [[NSDate date] timeIntervalSinceDate:seen] < 60) {
-            rlLog(@"dedupe: same notif within 60s skipped");
-            return;
-        }
-        recent[sig] = [NSDate date];
-        for (NSString *k in [recent allKeys]) {
-            if ([[NSDate date] timeIntervalSinceDate:recent[k]] > 120) [recent removeObjectForKey:k];
-        }
-        // 可选跳过来源（默认空=微信通知也作为触发源）
         NSString *skip = rlPref(@"skipSources") ?: @"";
         for (NSString *sn in [skip componentsSeparatedByString:@","]) {
             NSString *t = [sn stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
