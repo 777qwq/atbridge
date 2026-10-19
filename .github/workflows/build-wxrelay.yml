@@ -1,25 +1,42 @@
-name: build-wxrelay-relay
+name: build-wxrelay
 on:
   push:
-    paths: ['wxrelay_relay/**']
+    paths: ['wxrelay_relay/**', 'wxrelay_sender/**', '.github/workflows/build-wxrelay.yml']
   workflow_dispatch:
 jobs:
   build:
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
-      - name: Install ldid
-        run: brew install ldid
-      - name: Build arm64e dylib
+      - name: Install tools
+        run: brew install ldid dpkg
+      - name: Build relay (arm64e, SpringBoard)
         run: |
           cd wxrelay_relay
           xcrun -sdk iphoneos clang -arch arm64e -dynamiclib \
             -framework Foundation -framework CoreFoundation -fobjc-arc \
             -o WXRelayRelay.dylib Tweak.m -lobjc
-          vtool -show-build WXRelayRelay.dylib | head -12
           ldid -M -S WXRelayRelay.dylib
-          lipo -info WXRelayRelay.dylib
+          vtool -show-build WXRelayRelay.dylib | grep -A2 platform
+      - name: Build sender (arm64, WeChat)
+        run: |
+          cd wxrelay_sender
+          xcrun -sdk iphoneos clang -arch arm64 -dynamiclib \
+            -framework Foundation -framework UIKit -framework CoreFoundation -fobjc-arc \
+            -o WXRelay.dylib Tweak.m -lobjc
+          ldid -M -S WXRelay.dylib
+          vtool -show-build WXRelay.dylib | grep -A2 platform
+      - name: Package deb
+        run: |
+          mkdir -p pkg/DEBIAN pkg/var/jb/Library/MobileSubstrate/DynamicLibraries
+          cp wxrelay_relay/WXRelayRelay.dylib wxrelay_sender/WXRelay.dylib pkg/var/jb/Library/MobileSubstrate/DynamicLibraries/
+          printf '{ Filter = { Bundles = ( "com.apple.springboard" ); }; }\n' > pkg/var/jb/Library/MobileSubstrate/DynamicLibraries/WXRelayRelay.plist
+          printf '{ Filter = { Bundles = ( "com.tencent.xin" ); }; }\n' > pkg/var/jb/Library/MobileSubstrate/DynamicLibraries/WXRelay.plist
+          printf 'Package: com.mos.wxrelay\nName: WXRelay 微信通知转发\nVersion: 0.4.0\nArchitecture: iphoneos-arm64\nDescription: 通知文本匹配 -> 微信静默转发。规则: /var/mobile/Library/Preferences/com.mos.wxrelay.plist (rules=匹配文本#目标id, 多行)\nAuthor: mos\n' > pkg/DEBIAN/control
+          dpkg-deb --root-owner-group --build pkg WXRelay-0.4.0.deb
+          mkdir out && cp WXRelay-0.4.0.deb out/
+          dpkg-deb -c out/WXRelay-0.4.0.deb
       - uses: actions/upload-artifact@v4
         with:
-          name: wxrelay-relay-dylib
-          path: wxrelay_relay/WXRelayRelay.dylib
+          name: wxrelay-deb
+          path: out/
