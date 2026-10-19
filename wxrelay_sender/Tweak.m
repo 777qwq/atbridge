@@ -44,6 +44,85 @@ static void wrLog(NSString *msg) {
 
 static id WRElvis(id obj) { return obj ?: [NSNull null]; }
 
+/* ---------- 收信捕获：hook CMessageMgr AddMsg:MsgWrap:（进站消息全文） ---------- */
+static void (*orig_AddMsg)(id, SEL, id, id);
+static NSMutableDictionary *wrCatchRules; // matchText -> [targets]
+static NSString *wrSelfId = nil;
+
+static void WRLoadCatchRules(void) {
+    wrCatchRules = [NSMutableDictionary new];
+    NSString *p = [NSTemporaryDirectory() stringByAppendingPathComponent:@"wxrelay.cfg"];
+    NSString *content = [NSString stringWithContentsOfFile:p encoding:NSUTF8StringEncoding error:nil];
+    for (NSString *line in [content componentsSeparatedByCharactersInSet:[NSCharacterSet newlineCharacterSet]]) {
+        NSString *l = [line stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+        if (![l hasPrefix:@"catch="]) continue;
+        NSString *rule = [l substringFromIndex:6]; // 匹配文本#目标id1#目标id2
+        NSArray *parts = [rule componentsSeparatedByString:@"#"];
+        if (parts.count < 2) continue;
+        NSString *match = [parts[0] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+        if (!match.length) continue;
+        NSMutableArray *ts = [NSMutableArray new];
+        for (NSUInteger i = 1; i < parts.count; i++) {
+            NSString *t = [parts[i] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+            if (t.length) [ts addObject:t];
+        }
+        if (ts.count) wrCatchRules[match] = ts;
+    }
+    wrLog([NSString stringWithFormat:@"catch rules loaded: %@", wrCatchRules]);
+}
+
+static BOOL wrIsIncoming(id wrap) {
+    @try {
+        if (!wrSelfId) {
+            // 懒解析自身 wxid（CContactMgr.getSelfContact）
+            Class svc = NSClassFromString(@"MMServiceCenter");
+            id center = ((id(*)(id,SEL))objc_msgSend)(svc, NSSelectorFromString(@"defaultCenter"));
+            Class cmCls = NSClassFromString(@"CContactMgr");
+            id cm = ((id(*)(id,SEL,Class))objc_msgSend)(center, NSSelectorFromString(@"getService:"), cmCls);
+            SEL gsc = NSSelectorFromString(@"getSelfContact");
+            if (cm && [cm respondsToSelector:gsc]) {
+                id contact = ((id(*)(id,SEL))objc_msgSend)(cm, gsc);
+                if (contact && [contact respondsToSelector:NSSelectorFromString(@"m_nsUsrName")]) {
+                    wrSelfId = ((id(*)(id,SEL))objc_msgSend)(contact, NSSelectorFromString(@"m_nsUsrName"));
+                    wrLog([NSString stringWithFormat:@"selfId resolved: %@", wrSelfId]);
+                }
+            }
+        }
+        if (!wrSelfId) return NO;
+        NSString *to = [wrap respondsToSelector:NSSelectorFromString(@"m_nsToUsr")] ?
+            ((id(*)(id,SEL))objc_msgSend)(wrap, NSSelectorFromString(@"m_nsToUsr")) : nil;
+        NSString *from = [wrap respondsToSelector:NSSelectorFromString(@"m_nsFromUsr")] ?
+            ((id(*)(id,SEL))objc_msgSend)(wrap, NSSelectorFromString(@"m_nsFromUsr")) : nil;
+        return [to isEqualToString:wrSelfId] && ![from isEqualToString:wrSelfId];
+    } @catch (NSException *e) { return NO; }
+}
+
+static void hooked_AddMsg(id self, SEL _cmd, id arg1, id wrap) {
+    orig_AddMsg(self, _cmd, arg1, wrap);
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+        @autoreleasepool {
+            @try {
+                if (![wrap isKindOfClass:[NSString class]] && !wrap) return;
+                if (!wrIsIncoming(wrap)) return;
+                NSString *content = [wrap respondsToSelector:NSSelectorFromString(@"m_nsContent")] ?
+                    ((id(*)(id,SEL))objc_msgSend)(wrap, NSSelectorFromString(@"m_nsContent")) : nil;
+                NSString *from = ((id(*)(id,SEL))objc_msgSend)(wrap, NSSelectorFromString(@"m_nsFromUsr"));
+                if (![content isKindOfClass:[NSString class]] || !content.length) return;
+                if (!wrCatchRules.count) return;
+                wrLog([NSString stringWithFormat:@"incoming from %@ len=%lu", from, (unsigned long)content.length]);
+                for (NSString *match in wrCatchRules) {
+                    if (![content containsString:match]) continue;
+                    NSArray *targets = wrCatchRules[match];
+                    wrLog([NSString stringWithFormat:@"catch [%@] -> %@", match, targets]);
+                    for (NSString *t in targets) WRSendMessage(t, content); // 全文转发
+                }
+            } @catch (NSException *e) {
+                wrLog([NSString stringWithFormat:@"AddMsg hook EXC: %@", e.name]);
+            }
+        }
+    });
+}
+
 /* ---------- 保活：静默音频防冻结 ---------- */
 static void self_setupKeepAlive(void) {
     @try {
@@ -206,6 +285,16 @@ __attribute__((constructor)) static void wxrelayCtor(void) {
         (void)selfId;
 
         wrLog(@"step2: darwin task listener (file-based queue)");
+        @try {
+            Class mm = NSClassFromString(@"CMessageMgr");
+            SEL ams = NSSelectorFromString(@"AddMsg:MsgWrap:");
+            Method m = class_getInstanceMethod(mm, ams);
+            if (m) {
+                orig_AddMsg = (void (*)(id, SEL, id, id))method_getImplementation(m);
+                method_setImplementation(m, (IMP)hooked_AddMsg);
+                wrLog(@"AddMsg hook installed");
+            } else wrLog(@"AddMsg method not found");
+        } @catch (NSException *e) { wrLog([NSString stringWithFormat:@"hook EXC %@", e.name]); }
         CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL,
             WRTaskNotifyCallback, (__bridge CFStringRef)@"com.mos.wxrelay.task", NULL,
             CFNotificationSuspensionBehaviorDeliverImmediately);
@@ -216,6 +305,9 @@ __attribute__((constructor)) static void wxrelayCtor(void) {
         NSString *testTarget = WRConfig(@"testTarget");
         wrLog([NSString stringWithFormat:@"step3 done: %@", WRElvis(testTarget)]);
 
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            WRLoadCatchRules();
+        });
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(WR_TEST_DELAY * NSEC_PER_SEC)),
             dispatch_get_main_queue(), ^{
                 @try {
