@@ -45,6 +45,7 @@ jobs:
           curl -sL https://github.com/theos/sdks/archive/refs/heads/master.zip -o /tmp/sdk.zip
           unzip -q /tmp/sdk.zip -d /tmp
           mv /tmp/sdks-master/iPhoneOS16.5.sdk $HOME/theos/sdks/
+          ln -s $HOME/theos/sdks/iPhoneOS16.5.sdk $HOME/theos/sdks/iPhoneOS16.3.sdk
       - name: Build pref bundle (Settings entry)
         run: |
           export THEOS=$HOME/theos
