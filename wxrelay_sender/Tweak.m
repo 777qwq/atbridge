@@ -110,8 +110,9 @@ static void hooked_AddMsg(id self, SEL _cmd, id arg1, id wrap) {
                     ((id(*)(id,SEL))objc_msgSend)(wrap, NSSelectorFromString(@"m_nsContent")) : nil;
                 NSString *from = ((id(*)(id,SEL))objc_msgSend)(wrap, NSSelectorFromString(@"m_nsFromUsr"));
                 if (![content isKindOfClass:[NSString class]] || !content.length) return;
+                WRLoadCatchRules(); // 热生效：每次收信现读规则
                 if (!wrCatchRules.count) return;
-                wrLog([NSString stringWithFormat:@"incoming from %@ len=%lu", from, (unsigned long)content.length]);
+                wrLog([NSString stringWithFormat:@"incoming from %@ len=%lu rules=%lu", from, (unsigned long)content.length, (unsigned long)wrCatchRules.count]);
                 for (NSString *match in wrCatchRules) {
                     if (![content containsString:match]) continue;
                     NSArray *targets = wrCatchRules[match];

@@ -1,0 +1,9 @@
+{
+	entry = {
+		bundle = wxrelaypref;
+		cell = PSLinkCell;
+		icon = wxrelayicon.png;
+		isController = 1;
+		label = "WXRelay 通知转发";
+	};
+}

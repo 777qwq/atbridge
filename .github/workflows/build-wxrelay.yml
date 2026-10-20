@@ -32,10 +32,30 @@ jobs:
           cp wxrelay_relay/WXRelayRelay.dylib wxrelay_sender/WXRelay.dylib pkg/var/jb/Library/MobileSubstrate/DynamicLibraries/
           printf '{ Filter = { Bundles = ( "com.apple.springboard" ); }; }\n' > pkg/var/jb/Library/MobileSubstrate/DynamicLibraries/WXRelayRelay.plist
           printf '{ Filter = { Bundles = ( "com.tencent.xin" ); }; }\n' > pkg/var/jb/Library/MobileSubstrate/DynamicLibraries/WXRelay.plist
-          printf 'Package: com.mos.wxrelay\nName: WXRelay 微信通知转发\nVersion: 0.12.0\nArchitecture: iphoneos-arm64\nDescription: 通知文本匹配 -> 微信静默转发。规则: /var/mobile/Library/Preferences/com.mos.wxrelay.plist (rules=匹配文本#目标id, 多行)\nAuthor: mos\n' > pkg/DEBIAN/control
-          dpkg-deb --root-owner-group --build pkg WXRelay-0.12.0.deb
-          mkdir out && cp WXRelay-0.12.0.deb out/
-          dpkg-deb -c out/WXRelay-0.12.0.deb
+          printf 'Package: com.mos.wxrelay\nName: WXRelay 微信通知转发\nVersion: 1.0.0\nArchitecture: iphoneos-arm64\nDescription: 通知文本匹配 -> 微信静默转发。规则: /var/mobile/Library/Preferences/com.mos.wxrelay.plist (rules=匹配文本#目标id, 多行)\nAuthor: mos\n' > pkg/DEBIAN/control
+          dpkg-deb --root-owner-group --build pkg WXRelay-1.0.0.deb
+          mkdir out && cp WXRelay-1.0.0.deb out/
+          dpkg-deb -c out/WXRelay-1.0.0.deb
+      - name: Build pref bundle (Settings entry)
+        run: |
+          export THEOS=$HOME/theos
+          cd wxrelay_pref
+          make package FINAL=1
+          ls packages/
+      - name: Merge pref bundle into deb
+        run: |
+          P_DEB=$(ls wxrelay_pref/packages/*.deb | head -1)
+          mkdir -p prefb
+          dpkg-deb -R "$P_DEB" prefb/
+          cp -a prefb/var/jb/Library/PreferenceBundles/* pkg/var/jb/Library/PreferenceBundles/
+          mkdir -p pkg/var/jb/Library/PreferenceLoader/Preferences
+          cp -a prefb/var/jb/Library/PreferenceLoader/Preferences/* pkg/var/jb/Library/PreferenceLoader/Preferences/
+          sed -i 's/Version: 1.0.0/Version: 1.0.0/' pkg/DEBIAN/control 2>/dev/null || true
+          sed -i 's/WXRelay-1.0.0.deb/WXRelay-1.0.0.deb/' /dev/null 2>/dev/null || true
+          mkdir -p pkg/var/jb/Library/PreferenceLoader/Preferences 2>/dev/null || true
+          dpkg-deb --root-owner-group --build pkg WXRelay-1.0.0.deb
+          mkdir out && cp WXRelay-1.0.0.deb out/
+          dpkg-deb -c out/WXRelay-1.0.0.deb
       - uses: actions/upload-artifact@v4
         with:
           name: wxrelay-deb

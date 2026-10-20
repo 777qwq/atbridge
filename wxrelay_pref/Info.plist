@@ -1,0 +1,10 @@
+{
+	CFBundleDevelopmentRegion = English;
+	CFBundleIdentifier = "com.mos.wxrelaypref";
+	CFBundleInfoDictionaryVersion = "6.0";
+	CFBundlePackageType = BNDL;
+	CFBundleShortVersionString = "1.0.0";
+	CFBundleSignature = "????";
+	CFBundleVersion = "1.0.0";
+	NSPrincipalClass = "WXPRootController";
+}
