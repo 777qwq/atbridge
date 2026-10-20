@@ -38,6 +38,7 @@ jobs:
           dpkg-deb -c out/WXRelay-1.0.0.deb
       - name: Install theos
         run: |
+          brew install make xz
           git clone --depth 1 https://github.com/theos/theos.git $HOME/theos
           rm -f $HOME/theos/sdks/iPhoneOS*.sdk 2>/dev/null || true
           curl -sL https://github.com/theos/sdks/archive/refs/heads/master.zip -o /tmp/sdk.zip
@@ -47,7 +48,7 @@ jobs:
         run: |
           export THEOS=$HOME/theos
           cd wxrelay_pref
-          make package FINAL=1
+          gmake package FINAL=1
           ls packages/
       - name: Merge pref bundle into deb
         run: |
