@@ -1,6 +1,6 @@
 /**
  * WXRelay Relay v0.4 — SpringBoard 通知捕获器（arm64e）
- * hook NCNotificationDispatcher postNotificationWithRequest:（iOS 14-16 公开点）
+ * hook BBServer publishBulletin:destinations:（NotiBlock 同款，公告全文）
  * 命中规则 → 任务文件写入微信沙盒 tmp/wxrelay_task.json → darwin 通知 com.mos.wxrelay.task
  * 微信侧收到通知读自己 tmp 的任务文件发送（微信活着立即发；冻结则唤醒时补发）
  * 规则配置：CFPreferences 域 com.mos.wxrelay，键 rules = 多行 "匹配文本#目标id1#目标id2"
@@ -135,63 +135,40 @@ static void rlTryMatch(id request, id content, NSString *title, NSString *messag
     }
 }
 
-static void rlProcess(id __unused self, id request) {
+static void rlProcess(id __unused self, id bulletin) {
     @try {
-        id content = ((id(*)(id,SEL))objc_msgSend)(request, NSSelectorFromString(@"content"));
-        if (!content) return;
-        NSString *title = ((id(*)(id,SEL))objc_msgSend)(content, NSSelectorFromString(@"title")) ?: @"";
-        NSString *message = ((id(*)(id,SEL))objc_msgSend)(content, NSSelectorFromString(@"message")) ?: @"";
-        NSString *sectionID = @"";
-        SEL sidSel = NSSelectorFromString(@"sectionIdentifier");
-        if ([request respondsToSelector:sidSel]) {
-            sectionID = ((id(*)(id,SEL))objc_msgSend)(request, sidSel) ?: @"";
-        }
-        NSString *skip = rlPref(@"skipSources") ?: @"";
-        for (NSString *sn in [skip componentsSeparatedByString:@","]) {
-            NSString *t = [sn stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-            if (t.length && [sectionID isEqualToString:t]) return;
-        }
+        NSString *title = [bulletin respondsToSelector:NSSelectorFromString(@"title")] ?
+            (((id(*)(id,SEL))objc_msgSend)(bulletin, NSSelectorFromString(@"title")) ?: @"") : @"";
+        NSString *message = [bulletin respondsToSelector:NSSelectorFromString(@"message")] ?
+            (((id(*)(id,SEL))objc_msgSend)(bulletin, NSSelectorFromString(@"message")) ?: @"") : @"";
+        NSString *sectionID = [bulletin respondsToSelector:NSSelectorFromString(@"sectionID")] ?
+            (((id(*)(id,SEL))objc_msgSend)(bulletin, NSSelectorFromString(@"sectionID")) ?: @"") : @"";
         if (!title.length && !message.length) return;
 
         rlLog([NSString stringWithFormat:@"notif-len: title=%lu msg=%lu", (unsigned long)title.length, (unsigned long)message.length]);
         rlLog([NSString stringWithFormat:@"notif-full: [%@] %@", sectionID, message]);
 
-        rlTryMatch(request, content, title, message, sectionID);
-
-        // 延迟复查：iOS 原地更新通知内容（先短后长），3 秒后重读，变长再匹配一次
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            @try {
-                id c2 = ((id(*)(id,SEL))objc_msgSend)(request, NSSelectorFromString(@"content"));
-                if (!c2) return;
-                NSString *m2 = ((id(*)(id,SEL))objc_msgSend)(c2, NSSelectorFromString(@"message")) ?: @"";
-                NSString *t2 = ((id(*)(id,SEL))objc_msgSend)(c2, NSSelectorFromString(@"title")) ?: @"";
-                if (m2.length > message.length || t2.length > title.length) {
-                    rlLog([NSString stringWithFormat:@"late-update: msg %lu -> %lu chars, re-matching",
-                        (unsigned long)message.length, (unsigned long)m2.length]);
-                    rlTryMatch(request, c2, t2, m2, sectionID);
-                }
-            } @catch (NSException *e) { }
-        });
+        rlTryMatch(bulletin, bulletin, title, message, sectionID);
     } @catch (NSException *e) {
         rlLog([NSString stringWithFormat:@"EXC: %@ %@", e.name, e.reason]);
     }
 }
 
-static void (*orig_postNotification)(id, SEL, id);
-static void hooked_postNotification(id self, SEL _cmd, id request) {
-    orig_postNotification(self, _cmd, request);
-    rlProcess(self, request);
+static void (*orig_publishBulletin)(id, SEL, id, unsigned long long);
+static void hooked_publishBulletin(id self, SEL _cmd, id bulletin, unsigned long long destinations) {
+    orig_publishBulletin(self, _cmd, bulletin, destinations);
+    rlProcess(self, bulletin);
 }
 
 __attribute__((constructor)) static void wxrelayInit(void) {
     @autoreleasepool {
-        Class cls = NSClassFromString(@"NCNotificationDispatcher");
-        if (!cls) { rlLog(@"NCNotificationDispatcher not found"); return; }
-        SEL sel = NSSelectorFromString(@"postNotificationWithRequest:");
+        Class cls = NSClassFromString(@"BBServer");
+        if (!cls) { rlLog(@"BBServer not found"); return; }
+        SEL sel = NSSelectorFromString(@"publishBulletin:destinations:");
         Method m = class_getInstanceMethod(cls, sel);
-        if (!m) { rlLog(@"postNotificationWithRequest: not found"); return; }
-        orig_postNotification = (void (*)(id, SEL, id))method_getImplementation(m);
-        method_setImplementation(m, (IMP)hooked_postNotification);
-        rlLog(@"v0.4 hook installed (file-based task queue)");
+        if (!m) { rlLog(@"publishBulletin:destinations: not found"); return; }
+        orig_publishBulletin = (void (*)(id, SEL, id, unsigned long long))method_getImplementation(m);
+        method_setImplementation(m, (IMP)hooked_publishBulletin);
+        rlLog(@"v0.12 hook installed (BBServer.publishBulletin:destinations:)");
     }
 }
