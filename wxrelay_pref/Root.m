@@ -93,5 +93,4 @@
         _status.text = [NSString stringWithFormat:@"异常: %@", e.name];
     }
 }
-}
 @end
