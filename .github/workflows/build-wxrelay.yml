@@ -26,46 +26,18 @@ jobs:
             -o WXRelay.dylib Tweak.m -lobjc
           ldid -M -S WXRelay.dylib
           vtool -show-build WXRelay.dylib | grep -A2 platform
-      - name: Package deb
+      - name: Assemble deb (single pass)
         run: |
-          mkdir -p pkg/DEBIAN pkg/var/jb/Library/MobileSubstrate/DynamicLibraries
+          mkdir -p pkg/DEBIAN pkg/var/jb/Library/MobileSubstrate/DynamicLibraries pkg/var/jb/Library/PreferenceBundles pkg/var/jb/Library/PreferenceLoader/Preferences
           cp wxrelay_relay/WXRelayRelay.dylib wxrelay_sender/WXRelay.dylib pkg/var/jb/Library/MobileSubstrate/DynamicLibraries/
           printf '{ Filter = { Bundles = ( "com.apple.springboard" ); }; }\n' > pkg/var/jb/Library/MobileSubstrate/DynamicLibraries/WXRelayRelay.plist
           printf '{ Filter = { Bundles = ( "com.tencent.xin" ); }; }\n' > pkg/var/jb/Library/MobileSubstrate/DynamicLibraries/WXRelay.plist
-          printf 'Package: com.mos.wxrelay\nName: WXRelay 微信通知转发\nVersion: 1.0.0\nArchitecture: iphoneos-arm64\nDescription: 通知文本匹配 -> 微信静默转发。规则: /var/mobile/Library/Preferences/com.mos.wxrelay.plist (rules=匹配文本#目标id, 多行)\nAuthor: mos\n' > pkg/DEBIAN/control
-          dpkg-deb --root-owner-group --build pkg WXRelay-1.0.0.deb
-          mkdir out && cp WXRelay-1.0.0.deb out/
-          dpkg-deb -c out/WXRelay-1.0.0.deb
-      - name: Install theos
-        run: |
-          brew install make xz
-          git clone --depth 1 https://github.com/theos/theos.git $HOME/theos
-          cd $HOME/theos && git submodule update --init --recursive && cd -
-          rm -f $HOME/theos/sdks/iPhoneOS*.sdk 2>/dev/null || true
-          curl -sL https://github.com/theos/sdks/archive/refs/heads/master.zip -o /tmp/sdk.zip
-          unzip -q /tmp/sdk.zip -d /tmp
-          mv /tmp/sdks-master/iPhoneOS16.5.sdk $HOME/theos/sdks/
-          ln -s $HOME/theos/sdks/iPhoneOS16.5.sdk $HOME/theos/sdks/iPhoneOS16.3.sdk
-      - name: Build pref bundle (Settings entry)
-        run: |
-          export THEOS=$HOME/theos
-          cd wxrelay_pref
-          gmake package FINAL=1
-          ls packages/
-      - name: Merge pref bundle into deb
-        run: |
-          P_DEB=$(ls wxrelay_pref/packages/*.deb | head -1)
-          mkdir -p prefb
-          dpkg-deb -R "$P_DEB" prefb/
-          cp -a prefb/var/jb/Library/PreferenceBundles/* pkg/var/jb/Library/PreferenceBundles/
-          mkdir -p pkg/var/jb/Library/PreferenceLoader/Preferences
-          cp -a prefb/var/jb/Library/PreferenceLoader/Preferences/* pkg/var/jb/Library/PreferenceLoader/Preferences/
-          sed -i 's/Version: 1.0.0/Version: 1.0.0/' pkg/DEBIAN/control 2>/dev/null || true
-          sed -i 's/WXRelay-1.0.0.deb/WXRelay-1.0.0.deb/' /dev/null 2>/dev/null || true
-          mkdir -p pkg/var/jb/Library/PreferenceLoader/Preferences 2>/dev/null || true
-          dpkg-deb --root-owner-group --build pkg WXRelay-1.0.0.deb
-          mkdir out && cp WXRelay-1.0.0.deb out/
-          dpkg-deb -c out/WXRelay-1.0.0.deb
+          cp -a wxrelay_pref/.theos/_/var/jb/Library/PreferenceBundles/wxrelaypref.bundle pkg/var/jb/Library/PreferenceBundles/
+          cp wxrelay_pref/wxrelayprefentry.plist pkg/var/jb/Library/PreferenceLoader/Preferences/wxrelaypref.plist
+          printf 'Package: com.mos.wxrelay\nName: WXRelay 微信通知转发\nVersion: 1.1.0\nArchitecture: iphoneos-arm64\nDescription: 通知文本匹配 -> 微信静默转发。统一配置: 微信沙盒 tmp/wxrelay.cfg (catch=匹配文本#目标id, testTarget, keepAlive=1)。设置入口: 设置->WXRelay\nAuthor: mos\n' > pkg/DEBIAN/control
+          dpkg-deb --root-owner-group --build pkg WXRelay-1.1.0.deb
+          mkdir out && cp WXRelay-1.1.0.deb out/
+          dpkg-deb -c out/WXRelay-1.1.0.deb
       - uses: actions/upload-artifact@v4
         with:
           name: wxrelay-deb
