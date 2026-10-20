@@ -37,6 +37,11 @@
            "catch=指令#filehelper\n";
 }
 
+// PSListController 子页面约定：必须响应 initWithSpecifier:
+- (instancetype)initWithSpecifier:(id)spec {
+    return [self init];
+}
+
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.view.backgroundColor = [UIColor systemBackgroundColor];
