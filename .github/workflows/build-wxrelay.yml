@@ -40,6 +40,7 @@ jobs:
         run: |
           brew install make xz
           git clone --depth 1 https://github.com/theos/theos.git $HOME/theos
+          cd $HOME/theos && git submodule update --init --recursive && cd -
           rm -f $HOME/theos/sdks/iPhoneOS*.sdk 2>/dev/null || true
           curl -sL https://github.com/theos/sdks/archive/refs/heads/master.zip -o /tmp/sdk.zip
           unzip -q /tmp/sdk.zip -d /tmp
