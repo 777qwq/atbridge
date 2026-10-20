@@ -36,6 +36,13 @@ jobs:
           dpkg-deb --root-owner-group --build pkg WXRelay-1.0.0.deb
           mkdir out && cp WXRelay-1.0.0.deb out/
           dpkg-deb -c out/WXRelay-1.0.0.deb
+      - name: Install theos
+        run: |
+          git clone --depth 1 https://github.com/theos/theos.git $HOME/theos
+          rm -f $HOME/theos/sdks/iPhoneOS*.sdk 2>/dev/null || true
+          curl -sL https://github.com/theos/sdks/archive/refs/heads/master.zip -o /tmp/sdk.zip
+          unzip -q /tmp/sdk.zip -d /tmp
+          mv /tmp/sdks-master/iPhoneOS16.5.sdk $HOME/theos/sdks/
       - name: Build pref bundle (Settings entry)
         run: |
           export THEOS=$HOME/theos
