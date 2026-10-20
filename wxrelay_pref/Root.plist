@@ -1,0 +1,23 @@
+{
+	title = "WXRelay 通知转发";
+	items = (
+		{
+			cell = PSGroupCell;
+			footerText = "规则写在微信沙盒 tmp/wxrelay.cfg（catch=匹配文本#目标id，一行一条）。匹配即时生效，无需重启。微信消息=全文匹配；其他App通知=预览前30字内匹配。";
+		},
+		{
+			cell = PSButtonCell;
+			label = "打开配置文件（Filza）";
+			action = openCfgInFilza;
+		},
+		{
+			cell = PSButtonCell;
+			label = "重载规则";
+			action = reloadRules;
+		},
+		{
+			cell = PSGroupCell;
+			footerText = "目标 id 用懒猫插件的复制按钮获取（wxid_xxx / 群id@chatroom / filehelper）。";
+		},
+	);
+}

@@ -54,10 +54,10 @@ jobs:
           rsync -a --exclude='*.dSYM' "$BUNDLE_DIR/" pkg/var/jb/Library/PreferenceBundles/wxrelaypref.bundle/
           cp "$ENTRY_PL" pkg/var/jb/Library/PreferenceLoader/Preferences/wxrelaypref.plist
           find pkg -name "*.dSYM" -type d -exec rm -rf {} + 2>/dev/null || true
-          printf 'Package: com.mos.wxrelay\nName: WXRelay 微信通知转发\nVersion: 1.1.4\nArchitecture: iphoneos-arm64\nDescription: 通知文本匹配 -> 微信静默转发。统一配置: 微信沙盒 tmp/wxrelay.cfg (catch=匹配文本#目标id, testTarget, keepAlive=1)。设置入口: 设置->WXRelay\nAuthor: mos\n' > pkg/DEBIAN/control
-          dpkg-deb --root-owner-group --build pkg WXRelay-1.1.4.deb
-          mkdir out && cp WXRelay-1.1.4.deb out/
-          dpkg-deb -c out/WXRelay-1.1.4.deb
+          printf 'Package: com.mos.wxrelay\nName: WXRelay 微信通知转发\nVersion: 1.1.5\nArchitecture: iphoneos-arm64\nDescription: 通知文本匹配 -> 微信静默转发。统一配置: 微信沙盒 tmp/wxrelay.cfg (catch=匹配文本#目标id, testTarget, keepAlive=1)。设置入口: 设置->WXRelay\nAuthor: mos\n' > pkg/DEBIAN/control
+          dpkg-deb --root-owner-group --build pkg WXRelay-1.1.5.deb
+          mkdir out && cp WXRelay-1.1.5.deb out/
+          dpkg-deb -c out/WXRelay-1.1.5.deb
       - uses: actions/upload-artifact@v4
         with:
           name: wxrelay-deb
