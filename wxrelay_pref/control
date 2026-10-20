@@ -1,0 +1,6 @@
+Package: com.mos.wxrelaypref
+Name: WXRelay Preference Bundle
+Version: 1.0.0
+Architecture: iphoneos-arm64
+Description: Settings entry for WXRelay
+Author: mos
