@@ -51,7 +51,9 @@ jobs:
           BUNDLE_DIR=$(find wxrelay_pref/.theos -type d -name "wxrelaypref.bundle" | head -1)
           ENTRY_PL=$(find wxrelay_pref/.theos -name "wxrelaypref.plist" -path "*PreferenceLoader*" | head -1)
           echo "BUNDLE_DIR=$BUNDLE_DIR ENTRY_PL=$ENTRY_PL"
+          rm -rf pkg/var/jb/Library/PreferenceBundles/wxrelaypref.bundle
           rsync -a --exclude='*.dSYM' "$BUNDLE_DIR/" pkg/var/jb/Library/PreferenceBundles/wxrelaypref.bundle/
+          cp wxrelay_pref/Root.plist pkg/var/jb/Library/PreferenceBundles/wxrelaypref.bundle/Root.plist
           cp "$ENTRY_PL" pkg/var/jb/Library/PreferenceLoader/Preferences/wxrelaypref.plist
           find pkg -name "*.dSYM" -type d -exec rm -rf {} + 2>/dev/null || true
           printf 'Package: com.mos.wxrelay\nName: WXRelay 微信通知转发\nVersion: 1.1.5\nArchitecture: iphoneos-arm64\nDescription: 通知文本匹配 -> 微信静默转发。统一配置: 微信沙盒 tmp/wxrelay.cfg (catch=匹配文本#目标id, testTarget, keepAlive=1)。设置入口: 设置->WXRelay\nAuthor: mos\n' > pkg/DEBIAN/control
